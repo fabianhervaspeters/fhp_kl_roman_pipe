@@ -584,10 +584,58 @@ def test_scipy_vs_galsim_backend(galsim_image_pars):
     peak = np.max(np.abs(gs_sb))
     max_frac_residual = np.max(np.abs(scipy_image - gs_sb)) / peak
 
-    # scipy uses 60-pt GL quadrature (same as __call__)
+    # scipy now uses analytic k-space FFT (same method as render_image)
     assert (
-        max_frac_residual < 0.02
+        max_frac_residual < 2e-3
     ), f"scipy vs GalSim: max|residual|/peak = {max_frac_residual:.2e}"
+
+
+def test_scipy_vs_render_image_consistency(galsim_image_pars):
+    """Verify scipy synthetic backend matches render_image at same parameters.
+
+    Both use analytic k-space FFT (scipy=numpy, render_image=JAX).
+    Differences only from FFT grid/padding details.
+    """
+    from kl_pipe.synthetic import _generate_sersic_scipy
+
+    cosi = 0.7
+    flux = 1.0
+    int_rscale = 2.0
+    int_h_over_r = 0.1
+    theta_int = np.pi / 6
+    g1 = 0.02
+    g2 = -0.01
+    int_x0 = 0.3
+    int_y0 = -0.2
+
+    # scipy synthetic backend (numpy k-space FFT)
+    scipy_image = _generate_sersic_scipy(
+        galsim_image_pars,
+        flux=flux,
+        int_rscale=int_rscale,
+        n_sersic=1.0,
+        cosi=cosi,
+        theta_int=theta_int,
+        g1=g1,
+        g2=g2,
+        int_x0=int_x0,
+        int_y0=int_y0,
+        int_h_over_r=int_h_over_r,
+    )
+
+    # render_image (JAX k-space FFT)
+    model = InclinedExponentialModel()
+    theta = jnp.array(
+        [cosi, theta_int, g1, g2, flux, int_rscale, int_h_over_r, int_x0, int_y0]
+    )
+    render = np.array(model.render_image(theta, image_pars=galsim_image_pars))
+
+    peak = np.max(np.abs(render))
+    max_frac = np.max(np.abs(scipy_image - render)) / peak
+
+    assert (
+        max_frac < 2e-3
+    ), f"scipy vs render_image: max|residual|/peak = {max_frac:.2e}"
 
 
 @pytest.fixture(scope='module')
@@ -698,9 +746,9 @@ def test_galsim_regression_render_image_shear_psf(g1, g2, rect_image_pars, outpu
 @pytest.mark.parametrize(
     "cosi,int_h_over_r,tol",
     [
-        # face-on thin disk: GL quadrature underresolved (~4 nodes in sech² FWHM
-        # for delta/h_z=5); render_image exact here (ft_vertical=1 when sini=0)
+        # face-on thin disk: exp(-R/r_s) cusp has FT ~ k^{-3}
         (1.0, 0.01, 4e-3),
+        # inclined: LOS through sech² smooths cusp, suppressing high-k aliasing
         (0.7, 0.1, 5e-3),
     ],
     ids=["face-on", "inclined"],

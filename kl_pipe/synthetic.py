@@ -327,34 +327,54 @@ def _generate_sersic_scipy(
     X_gal = cos_pa * X_shear - sin_pa * Y_shear
     Y_gal = sin_pa * X_shear + cos_pa * Y_shear
 
-    # 3D LOS integration path for exponential with sech² vertical profile
+    # analytic k-space rendering (independent numpy implementation)
+    # matches GalSim SBInclinedExponential via Fourier-slice theorem:
+    #   FT_radial = 1 / (1 + k_r²)^{3/2}
+    #   FT_vertical = u / sinh(u),  u = (π/2) · h/r · ky_gal · r_s · sin(i)
     if int_h_over_r > 0 and n_sersic == 1.0:
-        h_z = int_h_over_r * int_rscale
-        rho0 = flux / (4.0 * np.pi * h_z * int_rscale**2)
+        Nrow, Ncol = image_pars.Nrow, image_pars.Ncol
+        ps = image_pars.pixel_scale
 
-        # Gauss-Legendre quadrature (same as JAX model)
-        from kl_pipe.intensity import _DEFAULT_N_QUAD
+        # padded k-grid (2x for anti-aliasing)
+        pad = 2
+        pr = int(np.ceil(pad * Nrow / 2) * 2)  # even padded sizes
+        pc = int(np.ceil(pad * Ncol / 2) * 2)
+        krow = 2 * np.pi * np.fft.fftfreq(pr, d=ps)
+        kcol = 2 * np.pi * np.fft.fftfreq(pc, d=ps)
+        KROW, KCOL = np.meshgrid(krow, kcol, indexing='ij')
 
-        nodes, weights = np.polynomial.legendre.leggauss(_DEFAULT_N_QUAD)
+        # centroid phase + half-pixel alignment
+        hrow = 0.5 * ps * (1 - Nrow % 2)
+        hcol = 0.5 * ps * (1 - Ncol % 2)
+        phase = np.exp(-1j * (KROW * (int_x0 - hrow) + KCOL * (int_y0 - hcol)))
 
-        delta = 5.0 * h_z / max(cosi, 0.1)
-        ell_center = Y_gal * sini / max(cosi, 0.1)  # (...,)
-        ell = ell_center[..., None] + delta * nodes  # (..., N_QUAD)
-        w = delta * weights
+        # shear (area-preserving, flux-preserving)
+        norm_s = 1.0 / np.sqrt(1.0 - (g1**2 + g2**2))
+        kr_s = norm_s * ((1 + g1) * KROW + g2 * KCOL)
+        kc_s = norm_s * (g2 * KROW + (1 - g1) * KCOL)
 
-        # LOS integration in galaxy frame
-        y_disk = Y_gal[..., None] * cosi + ell * sini
-        z_val = ell * cosi - Y_gal[..., None] * sini
-        x_disk = X_gal[..., None]
+        # rotation by -theta_int
+        c, s = np.cos(-theta_int), np.sin(-theta_int)
+        kr_gal = c * kr_s - s * kc_s
+        kc_gal = s * kr_s + c * kc_s
 
-        R = np.sqrt(x_disk**2 + y_disk**2)
-        radial = np.exp(-R / int_rscale)
-        z_norm = z_val / h_z
-        cosh_z = np.cosh(np.clip(z_norm, -20.0, 20.0))
-        vertical = 1.0 / (cosh_z**2)
+        # analytic FT
+        kr_sc = kr_gal * int_rscale
+        kc_sc = kc_gal * int_rscale
+        k_sq = kr_sc**2 + (kc_sc * cosi) ** 2
+        ft_radial = 1.0 / (1.0 + k_sq) ** 1.5
 
-        integrand = rho0 * radial * vertical
-        intensity_obs = np.sum(integrand * w, axis=-1)
+        u = (np.pi / 2) * int_h_over_r * kc_sc * sini
+        # safe-where: substitute finite dummy to avoid 0/sinh(0) = 0/0 warning
+        u_safe = np.where(np.abs(u) < 1e-4, np.ones_like(u), u)
+        ft_vertical = np.where(
+            np.abs(u) < 1e-4, 1.0 - u**2 / 6.0, u_safe / np.sinh(u_safe)
+        )
+
+        I_hat = flux * ft_radial * ft_vertical * phase
+        full = np.fft.ifft2(I_hat).real
+        full = np.roll(full, (Nrow // 2, Ncol // 2), axis=(0, 1))
+        intensity_obs = full[:Nrow, :Ncol] / ps**2
 
         if psf is not None:
             from kl_pipe.psf import gsobj_to_kernel, convolve_fft_numpy
