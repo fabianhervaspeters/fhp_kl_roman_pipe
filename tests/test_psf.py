@@ -711,7 +711,7 @@ def test_no_psf_regression(image_pars):
     model = InclinedExponentialModel()
     theta = jnp.array([0.7, 0.785, 0.0, 0.0, 1.0, 3.0, 0.1, 0.0, 0.0])
 
-    rendered = model.render_image(theta, image_pars)
+    rendered = model.render_image(theta, image_pars, oversample=1)
     raw = model._render_kspace(
         theta, image_pars.Nrow, image_pars.Ncol, image_pars.pixel_scale
     )
@@ -730,7 +730,7 @@ def test_psf_render_image_consistency(image_pars, gaussian_psf):
     theta = jnp.array([0.7, 0.785, 0.0, 0.0, 1.0, 3.0, 0.1, 0.0, 0.0])
 
     # manual convolution using k-space source (same as render_image uses internally)
-    raw = model.render_image(theta, image_pars)  # k-space, no PSF
+    raw = model.render_image(theta, image_pars, oversample=1)  # k-space, no PSF
     pdata = precompute_psf_fft(gaussian_psf, image_pars)
     manual = convolve_fft(raw, pdata)
 

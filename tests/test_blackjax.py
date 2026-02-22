@@ -875,12 +875,6 @@ class TestBlackJAXJointModel:
             f"See {log_path} for details."
         )
 
-    @pytest.mark.xfail(
-        reason="Joint model has poor parameter scaling: intensity gradients are ~1000x "
-        "larger than velocity gradients, causing NUTS step size to shrink to ~1e-8. "
-        "This is a known limitation requiring model reparameterization to fix.",
-        strict=False,
-    )
     def test_joint_model_variance_gaussian(self, joint_model_task_gaussian, output_dir):
         """
         Test BlackJAX with Gaussian priors on joint model.
