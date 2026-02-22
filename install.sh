@@ -46,6 +46,9 @@ pip install --no-build-isolation --no-deps --editable "$REPO_DIR/."
 #echo "Pip installing my special repo..."
 #pip install --no-build-isolation --no-deps --editable "$PATH_TO_REPO/."
 
+echo "Installing pre-commit hooks..."
+pre-commit install
+
 echo "cd $CWD"
 cd "$CWD"
 

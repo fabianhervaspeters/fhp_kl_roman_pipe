@@ -229,6 +229,35 @@ diagnostics-pdf:
 	@conda run -n klpipe python $(COLLATE_SCRIPT) --pdf
 	@echo "PDF report saved to $(DIAGNOSTICS_DIR)/"
 
+# keep only the latest file per day per extension, freeing disk space
+.PHONY: prune-diagnostics
+prune-diagnostics:
+	@if [ ! -d "$(DIAGNOSTICS_DIR)" ]; then \
+		echo "No diagnostics directory: $(DIAGNOSTICS_DIR)"; \
+		exit 0; \
+	fi; \
+	total_pruned=0; \
+	total_bytes=0; \
+	for ext in html pdf; do \
+		dates=$$(ls $(DIAGNOSTICS_DIR)/diagnostics_*.$$ext 2>/dev/null \
+			| sed 's|.*/diagnostics_\([0-9-]*\)_.*|\1|' | sort -u); \
+		for date in $$dates; do \
+			files=$$(ls $(DIAGNOSTICS_DIR)/diagnostics_$${date}_*.$$ext 2>/dev/null | sort); \
+			count=$$(echo "$$files" | wc -l | tr -d ' '); \
+			if [ "$$count" -gt 1 ]; then \
+				to_rm=$$(echo "$$files" | head -n $$((count - 1))); \
+				for f in $$to_rm; do \
+					sz=$$(stat -f%z "$$f" 2>/dev/null || stat --printf="%s" "$$f" 2>/dev/null); \
+					total_bytes=$$((total_bytes + sz)); \
+					total_pruned=$$((total_pruned + 1)); \
+					rm "$$f"; \
+				done; \
+			fi; \
+		done; \
+	done; \
+	mb=$$((total_bytes / 1048576)); \
+	echo "Pruned $$total_pruned files ($$mb MB freed)"
+
 # generate HTML + PDF and sync both to remote server (with confirmation)
 # NOTE: Turn on if useful
 # .PHONY: sync-diagnostics
