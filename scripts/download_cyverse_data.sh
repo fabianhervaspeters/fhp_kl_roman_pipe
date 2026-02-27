@@ -14,7 +14,7 @@ set -e  # Exit on error
 # Configuration
 CONFIG_FILE="${1:-data/cyverse/cyverse_data.conf}"
 DATA_DIR="data"
-CURL_OPTS="--retry 5 --retry-delay 3 --connect-timeout 30 --max-time 300 --netrc-optional"
+CURL_OPTS="-L --retry 5 --retry-delay 3 --connect-timeout 30 --max-time 300 --netrc-optional"
 
 # Colors for output
 RED='\033[0;31m'
@@ -194,6 +194,14 @@ while IFS='|' read -r remote_url local_path || [ -n "$remote_url" ]; do
     # Build and execute curl command
     curl_cmd=$(build_curl_cmd "$remote_url" "$local_file")
     if eval "$curl_cmd" 2>&1; then
+        # Guard against 0-byte files from 307 redirects (e.g. CyVerse IP block)
+        if [ ! -s "$local_file" ]; then
+            echo -e "${RED}Error: downloaded file is 0 bytes: $local_path${NC}"
+            echo -e "${RED}CyVerse may be blocking your IP. Visit https://unblockme.cyverse.org/ in a browser, then retry.${NC}"
+            rm -f "$local_file"
+            ((++failed))
+            continue
+        fi
         echo -e "${GREEN}Downloaded successfully${NC}"
         ((++downloaded))
     else
