@@ -7,13 +7,11 @@ mock observations, which have more complex physics than our analytical models.
 
 import pytest
 import numpy as np
-from pathlib import Path
 
 from kl_pipe.tng import TNG50MockData, TNGDataVectorGenerator, TNGRenderConfig
 from kl_pipe.parameters import ImagePars
 from kl_pipe.velocity import CenteredVelocityModel
 from kl_pipe.likelihood import create_jitted_likelihood_velocity
-from scipy.optimize import minimize
 
 
 # Mark all tests in this file to require TNG data

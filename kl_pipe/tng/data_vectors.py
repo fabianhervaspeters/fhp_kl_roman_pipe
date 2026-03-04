@@ -100,7 +100,6 @@ from astropy import units as u
 from ..parameters import ImagePars
 from ..utils import build_map_grid_from_image_pars
 from ..noise import add_noise
-from ..transformation import transform_to_disk_plane
 
 
 # TNG50 cosmology (Planck 2013)
@@ -1048,9 +1047,8 @@ class TNGDataVectorGenerator:
         mass_scale = masses.max()
         masses_norm = masses / mass_scale
 
-        # Center coordinates using SAME reference as intensity (stellar luminosity peak or subhalo)
-        # This ensures intensity and velocity show the same patch of sky
-        coords_centered = self._center_coordinates(coords, center)
+        # Reuse centered coordinates from above (same reference as intensity)
+        coords_centered = coords_cen
 
         # Handle orientation (gas with stellar-relative offset preservation)
         if config.use_native_orientation:

@@ -13,6 +13,7 @@ def add_intensity_noise(
     intensity: np.ndarray,
     target_snr: float,
     include_poisson: bool = True,
+    gain: float = 1.0,
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -24,12 +25,15 @@ def add_intensity_noise(
     Parameters
     ----------
     intensity : np.ndarray
-        Input intensity/flux map (should be non-negative)
+        Input intensity/flux map in data units (should be non-negative)
     target_snr : float
         Target signal-to-noise ratio (total_flux / noise_std)
     include_poisson : bool, default=True
         Whether to include Poisson photon noise. Should generally be True
         for realistic intensity maps.
+    gain : float, default=1.0
+        Conversion factor from data units to photon counts.
+        counts = intensity * gain. Poisson variance in data units = intensity / gain.
     seed : int, optional
         Random seed for reproducibility
 
@@ -38,13 +42,13 @@ def add_intensity_noise(
     noisy_intensity : np.ndarray
         Intensity map with added noise
     variance : np.ndarray
-        Variance map (uniform across image)
+        Per-pixel variance map
 
     Notes
     -----
-    - Poisson noise is sqrt(N) where N is the photon count
+    - Poisson noise variance for pixel i = intensity_i / gain (in data units)
     - Gaussian noise is added to reach target SNR
-    - Total variance = poisson_variance + gaussian_variance
+    - Total variance = poisson_variance + gaussian_variance (per-pixel)
 
     Examples
     --------
@@ -54,6 +58,9 @@ def add_intensity_noise(
     if seed is not None:
         np.random.seed(seed)
 
+    if gain <= 0:
+        raise ValueError(f"gain must be positive, got {gain}")
+
     # Signal is total integrated flux
     total_flux = np.abs(intensity).sum()
     if total_flux == 0:
@@ -62,40 +69,39 @@ def add_intensity_noise(
     # Initialize with original data
     noisy_data = intensity.copy()
 
-    # Add Poisson noise
-    poisson_variance = 0.0
+    # Add Poisson noise (per-pixel variance = intensity / gain in data units)
+    poisson_variance = np.zeros_like(intensity)
     if include_poisson:
-        # Ensure non-negative
         if intensity.min() < 0:
             raise ValueError("Intensity must be non-negative for Poisson noise")
 
-        # For very large values, use Gaussian approximation
+        counts = intensity * gain
+
+        # For very large counts, use Gaussian approximation
         max_lambda = 1e9
-        if intensity.max() > max_lambda:
-            # Gaussian approximation: std = sqrt(mean)
-            poisson_noise = np.random.normal(0, np.sqrt(intensity))
-            poisson_variance = intensity.mean()
+        if counts.max() > max_lambda:
+            poisson_noise = np.random.normal(0, np.sqrt(counts)) / gain
         else:
-            # Standard Poisson sampling
-            poisson_counts = np.random.poisson(intensity)
-            poisson_noise = poisson_counts - intensity
-            poisson_variance = intensity.mean()
+            poisson_counts = np.random.poisson(counts)
+            poisson_noise = (poisson_counts - counts) / gain
 
         noisy_data += poisson_noise
+        poisson_variance = intensity / gain
 
     # Calculate Gaussian noise needed to reach target SNR
+    # target_noise_power is total variance (scalar); subtract mean Poisson contribution
     target_noise_power = (total_flux / target_snr) ** 2
-    gaussian_variance = max(0, target_noise_power - poisson_variance)
+    mean_poisson_variance = poisson_variance.mean()
+    gaussian_variance = max(0.0, target_noise_power - mean_poisson_variance)
     gaussian_std = np.sqrt(gaussian_variance)
 
-    # Add Gaussian read noise
+    # Add Gaussian read noise (spatially uniform)
     if gaussian_std > 0:
         gaussian_noise = np.random.normal(0, gaussian_std, intensity.shape)
         noisy_data += gaussian_noise
 
-    # Total variance (uniform across map)
-    total_variance = gaussian_variance + poisson_variance
-    variance = np.full_like(intensity, total_variance)
+    # Per-pixel total variance
+    variance = poisson_variance + gaussian_variance
 
     return noisy_data, variance
 
@@ -171,11 +177,8 @@ def add_noise(
     """
     Add noise to data to achieve target signal-to-noise ratio.
 
-    DEPRECATED: Use add_intensity_noise() or add_velocity_noise() instead.
-
-    This function adds Gaussian read noise (and optionally Poisson photon noise)
-    to synthetic data to simulate realistic observations. The noise level is
-    calibrated to achieve a specified SNR.
+    Convenience wrapper that dispatches to add_intensity_noise (with Poisson)
+    or add_velocity_noise (Gaussian only) based on include_poisson flag.
 
     Parameters
     ----------
@@ -197,14 +200,7 @@ def add_noise(
     noisy_data : np.ndarray
         Data with added noise, same shape as input
     variance : np.ndarray
-        Variance map (uniform across image), same shape as input
-
-    Notes
-    -----
-    DEPRECATED: This generic function is kept for backward compatibility.
-    New code should use:
-    - add_intensity_noise() for flux/intensity maps
-    - add_velocity_noise() for velocity maps
+        Variance map, same shape as input
 
     Examples
     --------

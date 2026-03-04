@@ -21,7 +21,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
-from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 import sys
 
@@ -355,14 +354,14 @@ class Interactive3DGalaxyViewer:
                 label='L_gas',
             )
 
-        # Also add stellar L to gas plot for comparison
+        # Also add stellar L to gas plot for comparison (in rotated frame)
         self.ax_gas.quiver(
             0,
             0,
             0,
-            self.L_stellar[0] * arrow_scale,
-            self.L_stellar[1] * arrow_scale,
-            self.L_stellar[2] * arrow_scale,
+            L_stellar_rot[0] * arrow_scale,
+            L_stellar_rot[1] * arrow_scale,
+            L_stellar_rot[2] * arrow_scale,
             color='cyan',
             arrow_length_ratio=0.2,
             linewidth=2,

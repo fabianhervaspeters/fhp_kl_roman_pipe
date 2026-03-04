@@ -46,7 +46,6 @@ import webbrowser
 from pathlib import Path
 from typing import Dict, List
 
-import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from PIL import Image
@@ -887,17 +886,9 @@ def main() -> int:
 
     # sync to remote if requested
     if args.sync:
-        # TODO: Enable if useful
         print(
             '\nSyncing to remote server is not configured. Please set REMOTE_HOST and REMOTE_DIR in the script.'
         )
-        # files_to_sync = []
-        # if html_path:
-        #     files_to_sync.append(html_path)
-        # if pdf_path:
-        #     files_to_sync.append(pdf_path)
-
-        # return sync_to_remote(files_to_sync, confirm=not args.no_confirm)
 
     return 0
 
